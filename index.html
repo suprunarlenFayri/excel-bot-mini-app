@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Bot</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--tg-theme-bg-color, #f8f9fa);
+            color: var(--tg-theme-text-color, #212529);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: var(--tg-theme-hint-color, #6c757d);
+            font-size: 14px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            animation: slideUp 0.5s ease;
+        }
+
+        .stat-card {
+            background: var(--tg-theme-secondary-bg-color, #ffffff);
+            border-radius: 15px;
+            padding: 12px;
+            text-align: center;
+            flex: 1;
+            margin: 0 5px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-3px);
+        }
+
+        .stat-icon {
+            font-size: 20px;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--tg-theme-hint-color, #6c757d);
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--tg-theme-button-color, #40a7e3);
+        }
+
+        .upload-area {
+            background: var(--tg-theme-secondary-bg-color, #ffffff);
+            border: 2px dashed var(--tg-theme-button-color, #40a7e3);
+            border-radius: 20px;
+            padding: 30px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+
+        .upload-area:hover {
+            transform: scale(1.02);
+            background: var(--tg-theme-button-color, #40a7e3);
+            border-color: transparent;
+        }
+
+        .upload-area:hover .upload-icon,
+        .upload-area:hover .upload-text,
+        .upload-area:hover .upload-hint {
+            color: var(--tg-theme-button-text-color, #ffffff);
+        }
+
+        .upload-area.dragover {
+            transform: scale(1.05);
+            background: var(--tg-theme-button-color, #40a7e3);
+            border-color: transparent;
+        }
+
+        .upload-icon {
+            font-size: 42px;
+            color: var(--tg-theme-button-color, #40a7e3);
+            margin-bottom: 10px;
+            transition: color 0.3s;
+        }
+
+        .upload-text {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            transition: color 0.3s;
+        }
+
+        .upload-hint {
+            font-size: 13px;
+            color: var(--tg-theme-hint-color, #6c757d);
+            transition: color 0.3s;
+        }
+
+        .upload-hint span {
+            display: inline-block;
+            background: var(--tg-theme-button-color, #40a7e3);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            margin: 3px 2px;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .status {
+            margin: 15px 0;
+            padding: 12px;
+            border-radius: 12px;
+            font-size: 14px;
+            animation: slideIn 0.3s ease;
+        }
+
+        .status.loading {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        /* ===== ИЗМЕНЯЕМЫЙ КОНТЕЙНЕР ===== */
+        .result-container {
+            background: var(--tg-theme-secondary-bg-color, #ffffff);
+            border-radius: 15px;
+            padding: 15px;
+            margin-top: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            animation: slideUp 0.5s ease;
+            display: flex;
+            flex-direction: column;
+            resize: both;
+            overflow: auto;
+            min-width: 300px;
+            min-height: 200px;
+            max-width: 100%;
+            max-height: 80vh;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--tg-theme-hint-color, #e9ecef);
+            flex-shrink: 0;
+            cursor: move;
+            user-select: none;
+        }
+
+        .result-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .copy-btn {
+            background: var(--tg-theme-button-color, #40a7e3);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            flex-shrink: 0;
+        }
+
+        .copy-btn:hover {
+            opacity: 0.9;
+        }
+
+        #result {
+            white-space: pre-wrap;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            overflow: auto;
+            padding: 12px;
+            background: var(--tg-theme-bg-color, #f8f9fa);
+            border-radius: 8px;
+            flex: 1;
+            min-height: 100px;
+            height: auto;
+        }
+
+        .info {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 11px;
+            color: var(--tg-theme-hint-color, #adb5bd);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .stat-card {
+                background: var(--tg-theme-secondary-bg-color, #2d2d2d);
+            }
+            .upload-area {
+                background: var(--tg-theme-secondary-bg-color, #2d2d2d);
+            }
+            .result-container {
+                background: var(--tg-theme-secondary-bg-color, #2d2d2d);
+            }
+            #result {
+                background: var(--tg-theme-bg-color, #1a1a1a);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Excel Bot</h1>
+            <p>Загрузите файл для обработки</p>
+        </div>
+
+        <div class="stats" id="stats" style="display: none;">
+            <div class="stat-card">
+                <div class="stat-icon">📁</div>
+                <div class="stat-label">Файлов</div>
+                <div class="stat-value" id="fileCount">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📊</div>
+                <div class="stat-label">Заявок</div>
+                <div class="stat-value" id="orderCount">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⏱️</div>
+                <div class="stat-label">Фикс</div>
+                <div class="stat-value" id="fixaCount">0</div>
+            </div>
+        </div>
+
+        <div class="upload-area" id="dropArea">
+            <div class="upload-icon">📂</div>
+            <div class="upload-text">Нажмите для выбора файла</div>
+            <div class="upload-hint">
+                <span>.xlsx</span> <span>.xls</span> <span>.xlsm</span>
+                <br>до 5 МБ
+            </div>
+        </div>
+        
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm">
+        
+        <div id="status" class="status" style="display: none;"></div>
+        
+        <div class="result-container" id="resultContainer" style="display: none;">
+            <div class="result-header">
+                <h3>📋 Результат обработки</h3>
+                <button class="copy-btn" onclick="copyResult()">📋 Копировать</button>
+            </div>
+            <pre id="result"></pre>
+        </div>
+        
+        <div class="info">
+            ⚡ Файлы обрабатываются на сервере
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+        
+        const dropArea = document.getElementById('dropArea');
+        const fileInput = document.getElementById('fileInput');
+        const statusDiv = document.getElementById('status');
+        const resultPre = document.getElementById('result');
+        const resultContainer = document.getElementById('resultContainer');
+        const stats = document.getElementById('stats');
+        
+        dropArea.addEventListener('click', () => fileInput.click());
+        
+        dropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropArea.classList.add('dragover');
+        });
+        
+        dropArea.addEventListener('dragleave', () => {
+            dropArea.classList.remove('dragover');
+        });
+        
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropArea.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+        
+        async function handleFile(file) {
+            if (file.size > 5 * 1024 * 1024) {
+                showStatus('❌ Файл слишком большой. Максимум 5 МБ', 'error');
+                return;
+            }
+            
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (!['xlsx', 'xls', 'xlsm'].includes(ext)) {
+                showStatus('❌ Неподдерживаемый формат. Используйте .xlsx, .xls, .xlsm', 'error');
+                return;
+            }
+            
+            showStatus('⏳ Загружаем и обрабатываем файл...', 'loading');
+            resultContainer.style.display = 'none';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('user_id', tg.initDataUnsafe.user?.id || 'unknown');
+            
+            try {
+                const serverUrl = 'https://excel-bot-mini-app.onrender.com';
+                const response = await fetch(serverUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText);
+                }
+                
+                const result = await response.text();
+                
+                statusDiv.style.display = 'none';
+                resultPre.textContent = result;
+                resultContainer.style.display = 'flex';
+                
+                stats.style.display = 'flex';
+                document.getElementById('fileCount').textContent = '1';
+                
+                const orderMatches = result.match(/\d+\)/g);
+                document.getElementById('orderCount').textContent = orderMatches ? orderMatches.length : '0';
+                
+                const fixaMatches = result.match(/Фикса:/g);
+                document.getElementById('fixaCount').textContent = fixaMatches ? fixaMatches.length : '0';
+                
+            } catch (error) {
+                showStatus(`❌ Ошибка: ${error.message}`, 'error');
+            }
+        }
+        
+        function showStatus(text, type) {
+            statusDiv.style.display = 'block';
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = text;
+            resultContainer.style.display = 'none';
+        }
+        
+        function copyResult() {
+            const text = resultPre.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                const original = btn.textContent;
+                btn.textContent = '✅ Скопировано';
+                setTimeout(() => btn.textContent = original, 2000);
+            });
+        }
+    </script>
+</body>
+</html>
