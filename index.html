@@ -393,6 +393,11 @@
                 <div class="stat-label">Фикс</div>
                 <div class="stat-value" id="fixaCount">0</div>
             </div>
+            <div class="stat-card" id="remoteCheckBtn" style="cursor: pointer;">
+                <div class="stat-icon">📍</div>
+                <div class="stat-label">Удалёнки</div>
+                <div class="stat-value" id="remoteCount">0</div>
+            </div>
         </div>
 
         <div class="upload-area" id="dropArea">
@@ -421,8 +426,9 @@
         </div>
 
         <!-- Панель удалёнок -->
-        <div class="remote-panel">
-            <h3>📍 База удалёнок</h3>
+        <!-- Скрытая панель управления удалёнками (появляется по команде /admin) -->
+        <div id="adminPanel" class="remote-panel" style="display: none;">
+            <h3>📍 Управление базой удалёнок</h3>
             
             <div class="remote-form">
                 <input type="text" id="remoteAddress" placeholder="Адрес (город, улица, дом)">
@@ -539,6 +545,30 @@
             });
         }
 
+        document.getElementById('remoteCheckBtn')?.addEventListener('click', async () => {
+            // Получаем последний обработанный результат
+            const resultText = resultPre.textContent;
+            if (!resultText) {
+                showStatus('❌ Сначала обработайте файл', 'error');
+                return;
+            }
+            
+            showStatus('🔍 Проверяю адреса по базе...', 'loading');
+            
+            // Отправляем результат на сервер для проверки
+            const response = await fetch(`${serverUrlBase}/check-remotes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ result: resultText })
+            });
+            
+            const report = await response.text();
+            
+            statusDiv.style.display = 'none';
+            resultPre.textContent = report;
+            resultContainer.style.display = 'flex';
+        });
+        
         // ========== УПРАВЛЕНИЕ БАЗОЙ УДАЛЁНОК ==========
         const serverUrlBase = 'https://excel-bot-mini-app-1.onrender.com';
         
@@ -612,6 +642,24 @@
         
         // Загружаем список при старте
         loadRemotes();
+
+        // Секретная команда для показа админ-панели
+        let clickCount = 0;
+        const header = document.querySelector('.header h1');
+        if (header) {
+            header.addEventListener('click', () => {
+                clickCount++;
+                if (clickCount === 5) {
+                    const adminPanel = document.getElementById('adminPanel');
+                    if (adminPanel) {
+                        adminPanel.style.display = adminPanel.style.display === 'none' ? 'block' : 'none';
+                        showStatus('🔐 Админ-панель ' + (adminPanel.style.display === 'block' ? 'открыта' : 'скрыта'), 'success');
+                    }
+                    clickCount = 0;
+                }
+                setTimeout(() => clickCount = 0, 2000);
+            });
+        }
     </script>
 </body>
 </html>
