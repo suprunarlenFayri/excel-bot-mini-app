@@ -12,6 +12,10 @@ CORS(app)
 
 REMOTE_FILE = 'remote_addresses.json'
 
+# Коэффициенты формулы: ((x * 2 * 36) * car_multiplier) + (y * z) = i
+DISTANCE_COEFF_1 = 2
+DISTANCE_COEFF_2 = 36
+
 def load_remotes():
     """Загружает список удалёнок из JSON-файла"""
     if not os.path.exists(REMOTE_FILE):
@@ -24,6 +28,19 @@ def save_remotes(addresses):
     """Сохраняет список удалёнок в JSON-файл"""
     with open(REMOTE_FILE, 'w', encoding='utf-8') as f:
         json.dump({'addresses': addresses}, f, ensure_ascii=False, indent=2)
+
+def get_car_multiplier(workers):
+    """Возвращает множитель машин в зависимости от количества исполнителей"""
+    if workers <= 4:
+        return 1
+    elif workers <= 8:
+        return 2
+    elif workers <= 12:
+        return 3
+    elif workers <= 16:
+        return 4
+    else:
+        return (workers + 3) // 4
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -135,44 +152,23 @@ def check_remotes():
     while i < len(lines):
         line = lines[i].strip()
         
-        # Пропускаем пустые строки
         if not line:
             i += 1
             continue
-        
-        # Номер заявки — пропускаем
-        if re.match(r'^\d+\)', line):
+        if re.match(r'^\d+\)', line) or 'Фикса' in line or '📍' in line or line.startswith('+'):
             i += 1
             continue
         
-        # Фикса — пропускаем
-        if 'Фикса' in line:
-            i += 1
-            continue
-        
-        # Город (📍) — пропускаем
-        if '📍' in line:
-            i += 1
-            continue
-        
-        # Телефон — пропускаем
-        if line.startswith('+'):
-            i += 1
-            continue
-        
-        # Строка с исполнителями — пропускаем, но запоминаем количество
         if 'чел' in line:
-            # Извлекаем первое число из строки исполнителей
             workers_match = re.search(r'(\d+)', line)
-            if workers_match:
-                executors_count[-1] = int(workers_match.group(1)) if executors_count else 1
+            if workers_match and executors_count:
+                executors_count[-1] = int(workers_match.group(1))
             i += 1
             continue
         
-        # Всё остальное — считаем адресом
         if line and not line.startswith('+') and 'чел' not in line and 'Фикса' not in line and '📍' not in line:
             addresses.append(line)
-            executors_count.append(1)  # временно, потом перезапишется из строки с исполнителями
+            executors_count.append(1)
             i += 1
             continue
         
@@ -182,36 +178,54 @@ def check_remotes():
     remotes = load_remotes()
     remote_dict = {r['address']: r for r in remotes}
     
-    # Формируем отчёт
     report_lines = ["📍 **Проверка удалёнок**\n"]
     found = False
+    counter = 1
     
     for addr, workers in zip(addresses, executors_count):
+        matched = False
+        
         # Проверяем точное совпадение
         if addr in remote_dict:
+            matched = True
             found = True
             r = remote_dict[addr]
             distance = r['distance_km']
             rate = r['hourly_rate']
-            total = (distance * 2 * 36) + (rate * workers)
-            report_lines.append(f"✅ {addr}")
-            report_lines.append(f"   📏 {distance} км × 2 × 36 = {distance * 2 * 36}")
-            report_lines.append(f"   👥 {workers} чел × {rate} ₽ = {rate * workers}")
-            report_lines.append(f"   💰 **ИТОГО: {total:,.0f} ₽**\n")
+            car_multiplier = get_car_multiplier(workers)
+            distance_part = distance * DISTANCE_COEFF_1 * DISTANCE_COEFF_2 * car_multiplier
+            rate_part = rate * workers
+            total = distance_part + rate_part
+            
+            report_lines.append(f"{counter}) {addr}")
+            report_lines.append(f"   {distance}км×2×36×{car_multiplier}({distance_part})+{rate}×{workers}чел={total}")
+            report_lines.append("")
+            counter += 1
         else:
             # Проверяем частичное совпадение
             for remote_addr, r in remote_dict.items():
                 if remote_addr in addr or addr in remote_addr:
+                    matched = True
                     found = True
                     distance = r['distance_km']
                     rate = r['hourly_rate']
-                    total = (distance * 2 * 36) + (rate * workers)
-                    report_lines.append(f"✅ {addr}")
+                    car_multiplier = get_car_multiplier(workers)
+                    distance_part = distance * DISTANCE_COEFF_1 * DISTANCE_COEFF_2 * car_multiplier
+                    rate_part = rate * workers
+                    total = distance_part + rate_part
+                    
+                    report_lines.append(f"{counter}) {addr}")
                     report_lines.append(f"   (по базе: {remote_addr})")
-                    report_lines.append(f"   📏 {distance} км × 2 × 36 = {distance * 2 * 36}")
-                    report_lines.append(f"   👥 {workers} чел × {rate} ₽ = {rate * workers}")
-                    report_lines.append(f"   💰 **ИТОГО: {total:,.0f} ₽**\n")
+                    report_lines.append(f"   {distance}км×2×36×{car_multiplier}({distance_part})+{rate}×{workers}чел={total}")
+                    report_lines.append("")
+                    counter += 1
                     break
+        
+        if not matched:
+            report_lines.append(f"{counter}) {addr}")
+            report_lines.append(f"   ❌ Не найдено в базе")
+            report_lines.append("")
+            counter += 1
     
     if not found:
         report_lines.append("❌ Совпадений с базой не найдено")
