@@ -4,6 +4,7 @@ import os
 import tempfile
 import pandas as pd
 import json
+import re
 from bot import ExcelDataProcessor
 
 app = Flask(__name__)
@@ -12,6 +13,7 @@ CORS(app)
 REMOTE_FILE = 'remote_addresses.json'
 
 def load_remotes():
+    """Загружает список удалёнок из JSON-файла"""
     if not os.path.exists(REMOTE_FILE):
         return []
     with open(REMOTE_FILE, 'r', encoding='utf-8') as f:
@@ -19,6 +21,7 @@ def load_remotes():
         return data.get('addresses', [])
 
 def save_remotes(addresses):
+    """Сохраняет список удалёнок в JSON-файл"""
     with open(REMOTE_FILE, 'w', encoding='utf-8') as f:
         json.dump({'addresses': addresses}, f, ensure_ascii=False, indent=2)
 
@@ -71,10 +74,12 @@ def health():
 
 @app.route('/remotes', methods=['GET'])
 def get_remotes():
+    """Возвращает список удалёнок"""
     return jsonify(load_remotes())
 
 @app.route('/remotes', methods=['POST'])
 def add_remote():
+    """Добавляет новую удалёнку"""
     data = request.json
     addresses = load_remotes()
     
@@ -93,6 +98,7 @@ def add_remote():
 
 @app.route('/remotes/<int:remote_id>', methods=['DELETE'])
 def delete_remote(remote_id):
+    """Удаляет удалёнку по ID"""
     addresses = load_remotes()
     addresses = [a for a in addresses if a.get('id') != remote_id]
     save_remotes(addresses)
@@ -100,6 +106,7 @@ def delete_remote(remote_id):
 
 @app.route('/remotes/<int:remote_id>', methods=['PUT'])
 def update_remote(remote_id):
+    """Обновляет удалёнку"""
     data = request.json
     addresses = load_remotes()
     
@@ -112,6 +119,54 @@ def update_remote(remote_id):
     
     save_remotes(addresses)
     return jsonify({'success': True})
+
+@app.route('/check-remotes', methods=['POST'])
+def check_remotes():
+    """Проверяет адреса из результата по базе удалёнок"""
+    data = request.json
+    result_text = data.get('result', '')
+    
+    # Парсим адреса из результата
+    addresses = []
+    lines = result_text.split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        # Пропускаем строки с номерами заявок, городами, телефонами, исполнителями и фиксами
+        if re.match(r'^\d+\)', line):
+            continue
+        if '📍' in line:
+            continue
+        if line.startswith('+') or 'чел' in line or 'Фикса' in line:
+            continue
+        if line and not line.startswith('+') and 'чел' not in line and 'Фикса' not in line:
+            addresses.append(line)
+    
+    # Загружаем базу удалёнок
+    remotes = load_remotes()
+    remote_map = {r['address']: r.get('cost') or r.get('formula') for r in remotes}
+    
+    # Формируем отчёт
+    report_lines = ["📍 **Проверка удалёнок**\n"]
+    found = False
+    
+    for addr in addresses:
+        # Проверяем точное совпадение
+        if addr in remote_map:
+            found = True
+            report_lines.append(f"✅ {addr}\n   💰 Стоимость: {remote_map[addr]}\n")
+        else:
+            # Проверяем частичное совпадение (содержится ли адрес в базе)
+            for remote_addr, cost in remote_map.items():
+                if remote_addr in addr or addr in remote_addr:
+                    found = True
+                    report_lines.append(f"✅ {addr}\n   💰 Стоимость: {cost}\n   (по базе: {remote_addr})\n")
+                    break
+    
+    if not found:
+        report_lines.append("❌ Совпадений с базой не найдено")
+    
+    return "\n".join(report_lines)
 
 if __name__ == '__main__':
     print("🚀 Запуск веб-сервера на http://localhost:5000")
