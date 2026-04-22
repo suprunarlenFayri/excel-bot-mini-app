@@ -1,19 +1,32 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import tempfile
 import pandas as pd
-from bot import ExcelDataProcessor  # Импортируем твой класс
+import json
+from bot import ExcelDataProcessor
 
 app = Flask(__name__)
-CORS(app)  # Разрешаем запросы из Mini App
+CORS(app)
+
+REMOTE_FILE = 'remote_addresses.json'
+
+def load_remotes():
+    if not os.path.exists(REMOTE_FILE):
+        return []
+    with open(REMOTE_FILE, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+        return data.get('addresses', [])
+
+def save_remotes(addresses):
+    with open(REMOTE_FILE, 'w', encoding='utf-8') as f:
+        json.dump({'addresses': addresses}, f, ensure_ascii=False, indent=2)
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
     try:
         print("📥 Получен файл...")
         
-        # Получаем файл
         if 'file' not in request.files:
             return "❌ Нет файла", 400
         
@@ -26,14 +39,12 @@ def upload_file():
         print(f"📄 Имя файла: {file.filename}")
         print(f"👤 User ID: {user_id}")
         
-        # Сохраняем во временный файл
         temp_dir = tempfile.gettempdir()
         file_ext = os.path.splitext(file.filename)[1].lower()
         temp_path = os.path.join(temp_dir, f"mini_app_{user_id}_{os.urandom(4).hex()}{file_ext}")
         file.save(temp_path)
         print(f"💾 Сохранён в: {temp_path}")
         
-        # Обрабатываем Excel
         print("⚙️ Запускаем обработку...")
         df = pd.read_excel(temp_path, dtype=str)
         processor = ExcelDataProcessor()
@@ -43,10 +54,8 @@ def upload_file():
             os.remove(temp_path)
             return f"❌ Ошибка: {message}", 400
         
-        # Форматируем результат
         result = processor.format_main_result(data)
         
-        # Удаляем временный файл
         os.remove(temp_path)
         print("✅ Обработка завершена!")
         
@@ -59,6 +68,50 @@ def upload_file():
 @app.route('/health', methods=['GET'])
 def health():
     return "OK", 200
+
+@app.route('/remotes', methods=['GET'])
+def get_remotes():
+    return jsonify(load_remotes())
+
+@app.route('/remotes', methods=['POST'])
+def add_remote():
+    data = request.json
+    addresses = load_remotes()
+    
+    new_id = max([a.get('id', 0) for a in addresses]) + 1 if addresses else 1
+    
+    new_entry = {
+        'id': new_id,
+        'address': data.get('address'),
+        'formula': data.get('formula'),
+        'cost': data.get('cost')
+    }
+    
+    addresses.append(new_entry)
+    save_remotes(addresses)
+    return jsonify({'success': True, 'id': new_id})
+
+@app.route('/remotes/<int:remote_id>', methods=['DELETE'])
+def delete_remote(remote_id):
+    addresses = load_remotes()
+    addresses = [a for a in addresses if a.get('id') != remote_id]
+    save_remotes(addresses)
+    return jsonify({'success': True})
+
+@app.route('/remotes/<int:remote_id>', methods=['PUT'])
+def update_remote(remote_id):
+    data = request.json
+    addresses = load_remotes()
+    
+    for a in addresses:
+        if a.get('id') == remote_id:
+            a['address'] = data.get('address', a['address'])
+            a['formula'] = data.get('formula', a['formula'])
+            a['cost'] = data.get('cost', a['cost'])
+            break
+    
+    save_remotes(addresses)
+    return jsonify({'success': True})
 
 if __name__ == '__main__':
     print("🚀 Запуск веб-сервера на http://localhost:5000")
