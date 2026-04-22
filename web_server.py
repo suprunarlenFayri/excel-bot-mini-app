@@ -3,31 +3,45 @@ from flask_cors import CORS
 import os
 import tempfile
 import pandas as pd
-import json
+import psycopg2
+import psycopg2.extras
 import re
 from bot import ExcelDataProcessor
 
 app = Flask(__name__)
 CORS(app)
 
-REMOTE_FILE = 'remote_addresses.json'
+# ==================== КОНФИГУРАЦИЯ БД ====================
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
-# Коэффициенты формулы: ((x * 2 * 36) * car_multiplier) + (y * z) = i
+def get_db_connection():
+    """Возвращает соединение с PostgreSQL"""
+    return psycopg2.connect(DATABASE_URL)
+
+def init_db():
+    """Создаёт таблицу для удалёнок, если её нет"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('''
+                    CREATE TABLE IF NOT EXISTS remotes (
+                        id SERIAL PRIMARY KEY,
+                        address TEXT UNIQUE NOT NULL,
+                        distance_km REAL NOT NULL,
+                        hourly_rate REAL NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                # Создаём индекс для быстрого поиска по адресу
+                cur.execute('CREATE INDEX IF NOT EXISTS idx_address ON remotes(address)')
+            conn.commit()
+        print("✅ Таблица remotes готова")
+    except Exception as e:
+        print(f"❌ Ошибка инициализации БД: {e}")
+
+# ==================== КОЭФФИЦИЕНТЫ ФОРМУЛЫ ====================
 DISTANCE_COEFF_1 = 2
 DISTANCE_COEFF_2 = 36
-
-def load_remotes():
-    """Загружает список удалёнок из JSON-файла"""
-    if not os.path.exists(REMOTE_FILE):
-        return []
-    with open(REMOTE_FILE, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-        return data.get('addresses', [])
-
-def save_remotes(addresses):
-    """Сохраняет список удалёнок в JSON-файл"""
-    with open(REMOTE_FILE, 'w', encoding='utf-8') as f:
-        json.dump({'addresses': addresses}, f, ensure_ascii=False, indent=2)
 
 def get_car_multiplier(workers):
     """Возвращает множитель машин в зависимости от количества исполнителей"""
@@ -42,6 +56,69 @@ def get_car_multiplier(workers):
     else:
         return (workers + 3) // 4
 
+# ==================== РАБОТА С БАЗОЙ ДАННЫХ ====================
+def load_remotes():
+    """Загружает список удалёнок из PostgreSQL"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute('SELECT id, address, distance_km, hourly_rate FROM remotes ORDER BY id')
+                return cur.fetchall()
+    except Exception as e:
+        print(f"❌ Ошибка загрузки из БД: {e}")
+        return []
+
+def add_remote_to_db(address, distance_km, hourly_rate):
+    """Добавляет новую удалёнку в БД"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('''
+                    INSERT INTO remotes (address, distance_km, hourly_rate)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (address) DO UPDATE SET
+                        distance_km = EXCLUDED.distance_km,
+                        hourly_rate = EXCLUDED.hourly_rate
+                    RETURNING id
+                ''', (address, distance_km, hourly_rate))
+                new_id = cur.fetchone()[0]
+            conn.commit()
+            return new_id
+    except Exception as e:
+        print(f"❌ Ошибка добавления в БД: {e}")
+        return None
+
+def delete_remote_from_db(remote_id):
+    """Удаляет удалёнку из БД по ID"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('DELETE FROM remotes WHERE id = %s', (remote_id,))
+                deleted = cur.rowcount
+            conn.commit()
+            return deleted > 0
+    except Exception as e:
+        print(f"❌ Ошибка удаления из БД: {e}")
+        return False
+
+def update_remote_in_db(remote_id, address, distance_km, hourly_rate):
+    """Обновляет удалёнку в БД"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('''
+                    UPDATE remotes 
+                    SET address = %s, distance_km = %s, hourly_rate = %s
+                    WHERE id = %s
+                ''', (address, distance_km, hourly_rate, remote_id))
+                updated = cur.rowcount
+            conn.commit()
+            return updated > 0
+    except Exception as e:
+        print(f"❌ Ошибка обновления в БД: {e}")
+        return False
+
+# ==================== ОСНОВНЫЕ ЭНДПОИНТЫ ====================
 @app.route('/upload', methods=['POST'])
 def upload_file():
     try:
@@ -89,54 +166,52 @@ def upload_file():
 def health():
     return "OK", 200
 
+# ==================== ЭНДПОИНТЫ ДЛЯ РАБОТЫ С УДАЛЁНКАМИ ====================
 @app.route('/remotes', methods=['GET'])
 def get_remotes():
     """Возвращает список удалёнок"""
-    return jsonify(load_remotes())
+    remotes = load_remotes()
+    return jsonify(remotes)
 
 @app.route('/remotes', methods=['POST'])
 def add_remote():
     """Добавляет новую удалёнку"""
     data = request.json
-    addresses = load_remotes()
+    address = data.get('address')
+    distance_km = data.get('distance_km')
+    hourly_rate = data.get('hourly_rate')
     
-    new_id = max([a.get('id', 0) for a in addresses]) + 1 if addresses else 1
+    if not address or distance_km is None or hourly_rate is None:
+        return jsonify({'success': False, 'error': 'Не все поля заполнены'}), 400
     
-    new_entry = {
-        'id': new_id,
-        'address': data.get('address'),
-        'distance_km': data.get('distance_km'),
-        'hourly_rate': data.get('hourly_rate')
-    }
-    
-    addresses.append(new_entry)
-    save_remotes(addresses)
-    return jsonify({'success': True, 'id': new_id})
+    new_id = add_remote_to_db(address, distance_km, hourly_rate)
+    if new_id:
+        return jsonify({'success': True, 'id': new_id})
+    else:
+        return jsonify({'success': False, 'error': 'Ошибка добавления'}), 500
 
 @app.route('/remotes/<int:remote_id>', methods=['DELETE'])
 def delete_remote(remote_id):
     """Удаляет удалёнку по ID"""
-    addresses = load_remotes()
-    addresses = [a for a in addresses if a.get('id') != remote_id]
-    save_remotes(addresses)
-    return jsonify({'success': True})
+    if delete_remote_from_db(remote_id):
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'error': 'Запись не найдена'}), 404
 
 @app.route('/remotes/<int:remote_id>', methods=['PUT'])
 def update_remote(remote_id):
     """Обновляет удалёнку"""
     data = request.json
-    addresses = load_remotes()
+    address = data.get('address')
+    distance_km = data.get('distance_km')
+    hourly_rate = data.get('hourly_rate')
     
-    for a in addresses:
-        if a.get('id') == remote_id:
-            a['address'] = data.get('address', a['address'])
-            a['distance_km'] = data.get('distance_km', a['distance_km'])
-            a['hourly_rate'] = data.get('hourly_rate', a['hourly_rate'])
-            break
-    
-    save_remotes(addresses)
-    return jsonify({'success': True})
+    if update_remote_in_db(remote_id, address, distance_km, hourly_rate):
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'error': 'Запись не найдена'}), 404
 
+# ==================== ПРОВЕРКА УДАЛЁНОК ====================
 @app.route('/check-remotes', methods=['POST'])
 def check_remotes():
     """Проверяет адреса из результата по базе удалёнок"""
@@ -232,6 +307,9 @@ def check_remotes():
     
     return "\n".join(report_lines)
 
+# ==================== ЗАПУСК ====================
 if __name__ == '__main__':
+    # Инициализируем базу данных при старте
+    init_db()
     print("🚀 Запуск веб-сервера на http://localhost:5000")
     app.run(host='0.0.0.0', port=5000, debug=True)
