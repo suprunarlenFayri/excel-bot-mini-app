@@ -292,14 +292,28 @@ def calculate_items():
         # Ищем номер заявки (1), 2) и т.д.)
         if re.match(r'^\d+\)', line):
             i += 1
-            # Следующая строка — адрес
+            # Следующая строка — может быть фикса или адрес
             if i < len(lines):
-                address = lines[i].strip()
-                addresses.append(address)
-                # Определяем город для этого адреса
-                city = get_city_from_address(address)
-                cities_detected.append(city)
-                i += 1
+                next_line = lines[i].strip()
+                # Если строка начинается с "Фикса:" — пропускаем её и берём следующую
+                if next_line.startswith('Фикса:'):
+                    i += 1
+                    if i < len(lines):
+                        address = lines[i].strip()
+                        addresses.append(address)
+                        city = get_city_from_address(address)
+                        cities_detected.append(city)
+                        i += 1
+                    else:
+                        i += 1
+                        continue
+                else:
+                    # Это адрес
+                    address = next_line
+                    addresses.append(address)
+                    city = get_city_from_address(address)
+                    cities_detected.append(city)
+                    i += 1
             # Пропускаем строку с исполнителями
             i += 1
             # Пропускаем строку с телефоном
