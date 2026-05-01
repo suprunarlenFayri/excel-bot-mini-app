@@ -77,15 +77,9 @@
         }
 
         .stat-label {
-            font-size: 11px;
+            font-size: 12px;
+            font-weight: 500;
             color: var(--tg-theme-hint-color, #6c757d);
-            margin-bottom: 4px;
-        }
-
-        .stat-value {
-            font-size: 18px;
-            font-weight: 700;
-            color: var(--tg-theme-button-color, #40a7e3);
         }
 
         .upload-area {
@@ -308,12 +302,10 @@
             <div class="stat-card" id="remoteCheckBtn">
                 <div class="stat-icon">📍</div>
                 <div class="stat-label">Удалёнки</div>
-                <div class="stat-value">→</div>
             </div>
             <div class="stat-card" id="calculateItemsBtn">
                 <div class="stat-icon">🧮</div>
                 <div class="stat-label">По пунктам</div>
-                <div class="stat-value">→</div>
             </div>
         </div>
 
@@ -416,15 +408,7 @@
                 statusDiv.style.display = 'none';
                 resultPre.textContent = result;
                 resultContainer.style.display = 'flex';
-                
-                // stats.style.display = 'flex';
-               // document.getElementById('fileCount').textContent = '1';
-                
-               // const orderMatches = result.match(/\d+\)/g);
-               // document.getElementById('orderCount').textContent = orderMatches ? orderMatches.length : '0';
-                
-               // const fixaMatches = result.match(/Фикса:/g);
-               // document.getElementById('fixaCount').textContent = fixaMatches ? fixaMatches.length : '0'; 
+                stats.style.display = 'flex';
                 
             } catch (error) {
                 showStatus(`❌ Ошибка: ${error.message}`, 'error');
@@ -448,7 +432,7 @@
             });
         }
         
-        // ========== НОВАЯ КНОПКА: РАСЧЁТ ПО ПУНКТАМ ==========
+        // Кнопка "По пунктам"
         document.getElementById('calculateItemsBtn')?.addEventListener('click', async () => {
             const resultText = resultPre.textContent;
             if (!resultText) {
@@ -476,7 +460,7 @@
             }
         });
         
-        // ========== КНОПКА УДАЛЁНКИ (оставляем для совместимости) ==========
+        // Кнопка "Удалёнки"
         document.getElementById('remoteCheckBtn')?.addEventListener('click', async () => {
             const resultText = resultPre.textContent;
             if (!resultText) {
