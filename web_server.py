@@ -273,66 +273,55 @@ def calculate_items():
     data = request.json
     result_text = data.get('result', '')
     
-    # Парсим адреса в порядке их появления в результате
-    addresses = []
+    # Парсим заявки из результата
     lines = result_text.split('\n')
+    
+    addresses = []
+    cities_detected = []
     
     i = 0
     while i < len(lines):
         line = lines[i].strip()
         
-        if not line:
+        # Ищем город-заголовок (📍 **Город**)
+        if line.startswith('📍'):
+            i += 1
             i += 1
             continue
         
-        # Пропускаем номера заявок
+        # Ищем номер заявки (1), 2) и т.д.)
         if re.match(r'^\d+\)', line):
             i += 1
-            continue
-        
-        # Пропускаем строки с фиксой
-        if 'Фикса:' in line:
+            # Следующая строка — адрес
+            if i < len(lines):
+                address = lines[i].strip()
+                addresses.append(address)
+                # Определяем город для этого адреса
+                city = get_city_from_address(address)
+                cities_detected.append(city)
+                i += 1
+            # Пропускаем строку с исполнителями
             i += 1
-            continue
-        
-        # Пропускаем строки с городами (📍)
-        if '📍' in line:
-            i += 1
-            continue
-        
-        # Пропускаем строки с телефонами
-        if line.startswith('+'):
-            i += 1
-            continue
-        
-        # Пропускаем строки с исполнителями
-        if 'чел' in line:
-            i += 1
-            continue
-        
-        # Всё остальное — это адрес
-        if line:
-            addresses.append(line)
+            # Пропускаем строку с телефоном
             i += 1
             continue
         
         i += 1
     
-    # Формируем отчёт (сохраняем порядок из файла)
+    # Формируем отчёт
     report_lines = ["🧮 **Расчёт по пунктам**\n"]
     point_num = 1
     
-    for addr in addresses:
-        city = get_city_from_address(addr)
+    for idx, addr in enumerate(addresses):
+        city = cities_detected[idx]
         if city:
             rate = CITY_RATES.get(city, 0)
             minimum = CITY_MINIMUM.get(city, 1)
             total = rate * minimum
             report_lines.append(f"П{point_num}: {total}")
         else:
-            # Если город не найден, показываем первые 30 символов адреса
-            short_addr = addr[:40] + '...' if len(addr) > 40 else addr
-            report_lines.append(f"П{point_num}: ❌ Город не определён ({short_addr})")
+            # Город не найден в таблице — показываем адрес
+            report_lines.append(f"П{point_num}: {addr}")
         point_num += 1
     
     return "\n".join(report_lines)
