@@ -417,14 +417,14 @@
                 resultPre.textContent = result;
                 resultContainer.style.display = 'flex';
                 
-                stats.style.display = 'flex';
-                document.getElementById('fileCount').textContent = '1';
+                // stats.style.display = 'flex';
+               // document.getElementById('fileCount').textContent = '1';
                 
-                const orderMatches = result.match(/\d+\)/g);
-                document.getElementById('orderCount').textContent = orderMatches ? orderMatches.length : '0';
+               // const orderMatches = result.match(/\d+\)/g);
+               // document.getElementById('orderCount').textContent = orderMatches ? orderMatches.length : '0';
                 
-                const fixaMatches = result.match(/Фикса:/g);
-                document.getElementById('fixaCount').textContent = fixaMatches ? fixaMatches.length : '0';
+               // const fixaMatches = result.match(/Фикса:/g);
+               // document.getElementById('fixaCount').textContent = fixaMatches ? fixaMatches.length : '0'; 
                 
             } catch (error) {
                 showStatus(`❌ Ошибка: ${error.message}`, 'error');
