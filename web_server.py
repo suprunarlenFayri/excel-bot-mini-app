@@ -273,22 +273,52 @@ def calculate_items():
     data = request.json
     result_text = data.get('result', '')
     
-    # Парсим адреса
+    # Парсим адреса в порядке их появления в результате
     addresses = []
     lines = result_text.split('\n')
     
-    for line in lines:
-        line = line.strip()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        
         if not line:
+            i += 1
             continue
-        if re.match(r'^\d+\)', line) or 'Фикса' in line or '📍' in line or line.startswith('+'):
+        
+        # Пропускаем номера заявок
+        if re.match(r'^\d+\)', line):
+            i += 1
             continue
+        
+        # Пропускаем строки с фиксой
+        if 'Фикса:' in line:
+            i += 1
+            continue
+        
+        # Пропускаем строки с городами (📍)
+        if '📍' in line:
+            i += 1
+            continue
+        
+        # Пропускаем строки с телефонами
+        if line.startswith('+'):
+            i += 1
+            continue
+        
+        # Пропускаем строки с исполнителями
         if 'чел' in line:
+            i += 1
             continue
-        if line and not line.startswith('+') and 'чел' not in line and 'Фикса' not in line and '📍' not in line:
+        
+        # Всё остальное — это адрес
+        if line:
             addresses.append(line)
+            i += 1
+            continue
+        
+        i += 1
     
-    # Формируем отчёт
+    # Формируем отчёт (сохраняем порядок из файла)
     report_lines = ["🧮 **Расчёт по пунктам**\n"]
     point_num = 1
     
@@ -300,7 +330,9 @@ def calculate_items():
             total = rate * minimum
             report_lines.append(f"П{point_num}: {total}")
         else:
-            report_lines.append(f"П{point_num}: ❌ Город не определён")
+            # Если город не найден, показываем первые 30 символов адреса
+            short_addr = addr[:40] + '...' if len(addr) > 40 else addr
+            report_lines.append(f"П{point_num}: ❌ Город не определён ({short_addr})")
         point_num += 1
     
     return "\n".join(report_lines)
