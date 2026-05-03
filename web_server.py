@@ -277,7 +277,7 @@ def calculate_items():
     lines = result_text.split('\n')
     
     addresses = []
-    cities_detected = []
+    workers_list = []  # ← запоминаем количество исполнителей
     
     i = 0
     while i < len(lines):
@@ -301,8 +301,6 @@ def calculate_items():
                     if i < len(lines):
                         address = lines[i].strip()
                         addresses.append(address)
-                        city = get_city_from_address(address)
-                        cities_detected.append(city)
                         i += 1
                     else:
                         i += 1
@@ -311,11 +309,22 @@ def calculate_items():
                     # Это адрес
                     address = next_line
                     addresses.append(address)
-                    city = get_city_from_address(address)
-                    cities_detected.append(city)
                     i += 1
-            # Пропускаем строку с исполнителями
-            i += 1
+            
+            # Теперь строка с исполнителями
+            if i < len(lines):
+                exec_line = lines[i].strip()
+                # Извлекаем первое число из строки с исполнителями
+                workers_match = re.search(r'(\d+)', exec_line)
+                if workers_match:
+                    workers_count = int(workers_match.group(1))
+                else:
+                    workers_count = 1
+                workers_list.append(workers_count)
+                i += 1
+            else:
+                workers_list.append(1)
+            
             # Пропускаем строку с телефоном
             i += 1
             continue
@@ -327,11 +336,14 @@ def calculate_items():
     point_num = 1
     
     for idx, addr in enumerate(addresses):
-        city = cities_detected[idx]
+        city = get_city_from_address(addr)
+        workers = workers_list[idx] if idx < len(workers_list) else 1
+        
         if city:
             rate = CITY_RATES.get(city, 0)
             minimum = CITY_MINIMUM.get(city, 1)
-            total = rate * minimum
+            # Умножаем тариф на количество исполнителей!
+            total = rate * minimum * workers
             report_lines.append(f"П{point_num}: {total}")
         else:
             # Город не найден в таблице — показываем адрес
